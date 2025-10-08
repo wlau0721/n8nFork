@@ -17,18 +17,17 @@ services:
     
     # Build configuration
     build_command: |
-      echo "Starting n8n build process..."
-      npm ci --production=false
-      echo "Dependencies installed successfully"
-      npm run build
-      echo "Build completed successfully"
+      # [Commented out] npm ci --production=false  # Reason: no package-lock.json exists in this repo; npm ci would fail
+      # [Commented out] npm run build              # Reason: the published n8n npm package is prebuilt; an explicit build step is not required
+      npm install --omit=dev
     
     # Runtime configuration
     run_command: npm start
     
     # Instance configuration
     instance_count: 1
-    instance_size_slug: basic-xxs  # Options: basic-xxs, basic-xs, basic-s, basic-m, professional-xs, professional-s, professional-m, professional-l
+    # [Commented out] instance_size_slug: basic-xxs  # Reason: insufficient resources to install n8n dependencies reliably on App Platform
+    instance_size_slug: basic-s                      # Upgrade to a larger plan to ensure npm install completes successfully
     
     # HTTP configuration
     http_port: 8080
@@ -48,6 +47,8 @@ services:
         value: production
       - key: N8N_PORT
         value: "8080"
+      - key: N8N_LISTEN_ADDRESS
+        value: 0.0.0.0
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_HOST
