@@ -19,24 +19,52 @@ jobs:
       with:
         token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
     
+    - name: Configure and verify doctl authentication
+      run: |
+        # Purpose: Ensure doctl is installed and authenticated before deployment
+        doctl version
+        doctl auth init -t "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
+        doctl account get
+    
+    - name: Debug: List existing apps
+      run: |
+        # Purpose: Verify access to App Platform APIs and list current apps
+        doctl apps list || (echo "doctl apps list failed"; exit 1)
+    
     - name: Deploy to App Platform
       run: |
+        set -euxo pipefail
+        # [Commented out] Placeholder replacement not needed because app.yaml uses SECRET variables managed by App Platform
+        # sed -i 's/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g' app.yaml  # Disabled: handled by App Platform
+        # sed -i 's/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g' app.yaml          # Disabled: handled by App Platform
+        # sed -i 's/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g' app.yaml  # Disabled: handled by App Platform
+        
         # Deploy or update the app
         if doctl apps list | grep -q "n8n-app"; then
           echo "Updating existing app..."
           APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}')
-          doctl apps update $APP_ID --spec app.yaml
+          doctl apps update "$APP_ID" --spec app.yaml
         else
           echo "Creating new app..."
           doctl apps create --spec app.yaml
         fi
-        
+    
     - name: Wait for deployment
       run: |
         echo "Waiting for deployment to complete..."
         sleep 60
-        
-    - name: Get app info
+        # Try to fetch recent deployments and show status for visibility
+        APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
+        if [ -n "$APP_ID" ]; then
+          echo "Recent deployments for app $APP_ID:" && doctl apps list-deployments "$APP_ID" || true
+        fi
+    
+    - name: Get app info and logs (best effort)
       run: |
         echo "App deployment status:"
-        doctl apps list
+        doctl apps list || true
+        APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
+        if [ -n "$APP_ID" ]; then
+          echo "Fetching build logs for n8n-web component (if available)"
+          doctl apps logs "$APP_ID" n8n-web --type build || true
+        fi

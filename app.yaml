@@ -7,6 +7,7 @@ region: sfo3  # Change to your preferred region (nyc1, nyc3, ams3, sgp1, lon1, f
 
 services:
   - name: n8n-web
+    environment_slug: node-js
     # Source configuration - connects to your GitHub repository
     source_dir: /
     github:
@@ -30,7 +31,7 @@ services:
     instance_size_slug: basic-xxs  # Options: basic-xxs, basic-xs, basic-s, basic-m, professional-xs, professional-s, professional-m, professional-l
     
     # HTTP configuration
-    http_port: 5678
+    http_port: 8080
     
     # Health check configuration
     health_check:
@@ -46,7 +47,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: N8N_PORT
-        value: "5678"
+        value: "8080"
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_HOST
@@ -123,17 +124,17 @@ services:
     #   cpus: "0.5"
     #   memory_mib: 1024
 
-# Database configuration - Using existing DigitalOcean Managed PostgreSQL
-databases:
-  - name: n8n-postgres
-    engine: PG
-    # Using existing managed database - connection details configured via environment variables
-    # Database details:
-    # Host: n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
-    # Port: 25060
-    # Database: defaultdb
-    # User: doadmin
-    # SSL: Required
+# [Disabled] databases section commented out — using external managed PostgreSQL via env vars to avoid invalid spec errors.
+# databases:
+#   - name: n8n-postgres
+#     engine: PG
+#     # Using existing managed database - connection details configured via environment variables
+#     # Database details:
+#     # Host: n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
+#     # Port: 25060
+#     # Database: defaultdb
+#     # User: doadmin
+#     # SSL: Required
 
 # Static sites (if you have any documentation or landing pages)
 # static_sites:
