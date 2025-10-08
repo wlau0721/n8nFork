@@ -68,7 +68,7 @@ services:
         value: defaultdb
       - key: DB_POSTGRESDB_USER
         scope: RUN_TIME
-        value: doadmin
+        value: n8n_user
       - key: DB_POSTGRESDB_SCHEMA
         value: public
       - key: DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED
