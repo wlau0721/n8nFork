@@ -2,7 +2,7 @@
 # This file defines the infrastructure and deployment configuration
 # for the n8nDeployFromGithub application
 
-name: n8nDeployFromGithub
+name: n8n-app
 region: sfo3  # Change to your preferred region (nyc1, nyc3, ams3, sgp1, lon1, fra1, tor1, sfo3, blr1, syd1)
 
 services:
@@ -10,7 +10,7 @@ services:
     # Source configuration - connects to your GitHub repository
     source_dir: /
     github:
-      repo: your-github-username/n8n  # Replace with your forked n8n repository
+      repo: wlau0721/n8nFork  # Your forked n8n repository
       branch: main
       deploy_on_push: true
     
@@ -87,6 +87,12 @@ services:
       # N8N_ENCRYPTION_KEY (generate a 32-character random string)
       # N8N_USER_MANAGEMENT_JWT_SECRET (generate a secure random string)
       - key: DB_POSTGRESDB_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+      - key: N8N_ENCRYPTION_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: N8N_USER_MANAGEMENT_JWT_SECRET
         scope: RUN_TIME
         type: SECRET
       
