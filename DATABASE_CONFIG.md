@@ -26,13 +26,13 @@
 
 ### 1. Admin User (doadmin)
 - **Username**: `doadmin`
-- **Password**: `AVNS_5DYPiP3ElomXBEq4SrJ`
+- **Password**: `[ADMIN_PASSWORD_FROM_DIGITALOCEAN_DASHBOARD]`
 - **Role**: Primary (full administrative access)
 - **Usage**: Database administration and initial setup
 
 ### 2. Application User (n8n_user) ✅ NEWLY CREATED
 - **Username**: `n8n_user`
-- **Password**: `AVNS_MANEYcFG71Md4XYzRLF`
+- **Password**: `[N8N_USER_PASSWORD_FROM_DIGITALOCEAN_DASHBOARD]`
 - **Role**: Normal (application-level access)
 - **Usage**: n8n application database operations
 
@@ -60,7 +60,7 @@ DB_POSTGRESDB_HOST=n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
 DB_POSTGRESDB_PORT=25060
 DB_POSTGRESDB_DATABASE=defaultdb
 DB_POSTGRESDB_USER=n8n_user
-DB_POSTGRESDB_PASSWORD=AVNS_MANEYcFG71Md4XYzRLF
+DB_POSTGRESDB_PASSWORD=[N8N_USER_PASSWORD_FROM_DIGITALOCEAN_DASHBOARD]
 DB_POSTGRESDB_SSL=true
 ```
 

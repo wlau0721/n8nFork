@@ -153,6 +153,9 @@ node_modules/
 # TernJS port file
 .tern-port
 
+# Sensitive deployment credentials
+DEPLOYMENT_CREDENTIALS.md
+
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
 

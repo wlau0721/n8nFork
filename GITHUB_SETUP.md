@@ -11,7 +11,7 @@ You need to add the following secrets to your GitHub repository for automated de
    - Used for: Authenticating with DigitalOcean API and deploying to App Platform
 
 2. **DB_POSTGRESDB_PASSWORD**
-   - Value: `AVNS_MANEYcFG71Md4XYzRLF` (n8n_user password)
+   - Value: `[N8N_USER_PASSWORD_FROM_DIGITALOCEAN_DASHBOARD]` (n8n_user password)
    - Used for: Database connection authentication
 
 3. **N8N_ENCRYPTION_KEY**
