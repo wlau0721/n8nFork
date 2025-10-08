@@ -53,7 +53,8 @@ services:
       - key: N8N_LISTEN_ADDRESS
         value: 0.0.0.0
       - key: N8N_PROTOCOL
-        value: https
+        # [Commented out] value: https  # Reason: App Platform handles HTTPS at ingress; n8n should run HTTP internally to avoid requiring SSL cert/key
+        value: http
       - key: N8N_HOST
         scope: RUN_TIME
         value: lexagora.ondigitalocean.app
@@ -82,7 +83,10 @@ services:
       - key: DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED
         scope: RUN_TIME
         value: "false"
-      - key: DB_POSTGRESDB_SSL
+      # [Commented out] - key: DB_POSTGRESDB_SSL
+      #   scope: RUN_TIME
+      #   value: "true"  # Reason: variable name is incorrect; use DB_POSTGRESDB_SSL_ENABLED per n8n docs
+      - key: DB_POSTGRESDB_SSL_ENABLED
         scope: RUN_TIME
         value: "true"
       - key: N8N_LOG_LEVEL
