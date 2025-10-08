@@ -1,0 +1,195 @@
+# DigitalOcean App Platform Specification for n8n Deployment
+# This file defines the infrastructure and deployment configuration
+# for the n8nDeployFromGithub application
+
+name: n8nDeployFromGithub
+region: sfo3  # Change to your preferred region (nyc1, nyc3, ams3, sgp1, lon1, fra1, tor1, sfo3, blr1, syd1)
+
+services:
+  - name: n8n-web
+    # Source configuration - connects to your GitHub repository
+    source_dir: /
+    github:
+      repo: your-github-username/n8n  # Replace with your forked n8n repository
+      branch: main
+      deploy_on_push: true
+    
+    # Build configuration
+    build_command: |
+      npm ci --production=false
+      npm run build
+    
+    # Runtime configuration
+    run_command: npm start
+    
+    # Instance configuration
+    instance_count: 1
+    instance_size_slug: basic-xxs  # Options: basic-xxs, basic-xs, basic-s, basic-m, professional-xs, professional-s, professional-m, professional-l
+    
+    # HTTP configuration
+    http_port: 5678
+    
+    # Health check configuration
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 60
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    
+    # Environment variables (non-sensitive)
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: N8N_PORT
+        value: "5678"
+      - key: N8N_PROTOCOL
+        value: https
+      - key: N8N_HOST
+        scope: RUN_TIME
+        value: lexagora.ondigitalocean.app
+      - key: WEBHOOK_URL
+        value: https://lexagora.ondigitalocean.app/
+      - key: DB_TYPE
+        value: postgresdb
+      - key: APP_DOMAIN
+        scope: RUN_TIME
+        value: lexagora.ondigitalocean.app
+      # Database connection environment variables (configure these in App Platform dashboard)
+      - key: DB_POSTGRESDB_HOST
+        scope: RUN_TIME
+        value: n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
+      - key: DB_POSTGRESDB_PORT
+        scope: RUN_TIME
+        value: "25060"
+      - key: DB_POSTGRESDB_DATABASE
+        scope: RUN_TIME
+        value: defaultdb
+      - key: DB_POSTGRESDB_USER
+        scope: RUN_TIME
+        value: doadmin
+      - key: DB_POSTGRESDB_SCHEMA
+        value: public
+      - key: DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED
+        scope: RUN_TIME
+        value: "false"
+      - key: N8N_LOG_LEVEL
+        value: info
+      - key: GENERIC_TIMEZONE
+        value: UTC
+      - key: N8N_METRICS
+        value: "false"
+      - key: N8N_DIAGNOSTICS_ENABLED
+        value: "false"
+      # SECURITY: Add these as ENCRYPTED environment variables in App Platform dashboard:
+      # DB_POSTGRESDB_PASSWORD (value: AVNS_5DYPiP3ElomXBEq4SrJ)
+      # N8N_ENCRYPTION_KEY (generate a 32-character random string)
+      # N8N_USER_MANAGEMENT_JWT_SECRET (generate a secure random string)
+      - key: DB_POSTGRESDB_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+      
+      # Binary data storage configuration (uncomment if using DigitalOcean Spaces)
+      # - key: N8N_DEFAULT_BINARY_DATA_MODE
+      #   value: s3
+      # - key: N8N_BINARY_DATA_S3_ENDPOINT
+      #   value: https://nyc3.digitaloceanspaces.com  # Change region as needed
+      # - key: N8N_BINARY_DATA_S3_REGION
+      #   value: nyc3  # Change to your Spaces region
+      # - key: N8N_BINARY_DATA_S3_BUCKET
+      #   value: your-spaces-bucket-name  # Replace with your bucket name
+    
+    # Routes configuration
+    routes:
+      - path: /
+    
+    # Resource limits
+    # Uncomment and adjust based on your needs
+    # resources:
+    #   cpu_kind: shared  # Options: shared, dedicated
+    #   cpus: "0.5"
+    #   memory_mib: 1024
+
+# Database configuration - Using existing DigitalOcean Managed PostgreSQL
+databases:
+  - name: n8n-postgres
+    engine: PG
+    # Using existing managed database - connection details configured via environment variables
+    # Database details:
+    # Host: n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
+    # Port: 25060
+    # Database: defaultdb
+    # User: doadmin
+    # SSL: Required
+
+# Static sites (if you have any documentation or landing pages)
+# static_sites:
+#   - name: docs
+#     source_dir: /docs
+#     github:
+#       repo: your-github-username/n8n-docs
+#       branch: main
+#     build_command: npm run build
+#     output_dir: /dist
+
+# Jobs (for one-time or scheduled tasks)
+# jobs:
+#   - name: db-migration
+#     source_dir: /
+#     github:
+#       repo: your-github-username/n8n
+#       branch: main
+#     run_command: npm run db:migrate
+#     instance_count: 1
+#     instance_size_slug: basic-xxs
+#     kind: PRE_DEPLOY  # Options: PRE_DEPLOY, POST_DEPLOY, CRON
+
+# Workers (for background processing)
+# workers:
+#   - name: n8n-worker
+#     source_dir: /
+#     github:
+#       repo: your-github-username/n8n
+#       branch: main
+#     run_command: npm run start:worker
+#     instance_count: 1
+#     instance_size_slug: basic-xxs
+
+# Ingress configuration (for custom domains)
+# ingress:
+#   rules:
+#     - match:
+#         path:
+#           prefix: /
+#       component:
+#         name: n8n-web
+
+# Alerts configuration
+# alerts:
+#   - rule: CPU_UTILIZATION
+#     disabled: false
+#     value: 80
+#   - rule: MEM_UTILIZATION
+#     disabled: false
+#     value: 80
+#   - rule: RESTART_COUNT
+#     disabled: false
+#     value: 5
+
+# Functions (for serverless functions if needed)
+# functions:
+#   - name: webhook-handler
+#     source_dir: /functions/webhook
+#     github:
+#       repo: your-github-username/n8n-functions
+#       branch: main
+#     routes:
+#       - path: /api/webhook
+
+# Domains (for custom domains)
+# domains:
+#   - domain: your-custom-domain.com
+#     type: PRIMARY
+#     wildcard: false
+#     zone: your-custom-domain.com

@@ -1,0 +1,95 @@
+Project Plan: Deploy n8n from GitHub to DigitalOcean App Platform
+Name: n8nDeployFromGithub
+
+1) Objective and Scope
+- Deploy the open-source n8n workflow automation application from your GitHub repository to DigitalOcean App Platform under the app name "n8nDeployFromGithub".
+- Use a stateless runtime with persistent state in a DigitalOcean Managed PostgreSQL database; consider Spaces (S3-compatible) for binary data only if required and supported.
+
+2) Deployment Strategy
+- Preferred: CI/CD via GitHub Actions to deploy to DigitalOcean App Platform using an App Spec file and a DigitalOcean Personal Access Token.
+- Alternative: Link the GitHub repository directly in App Platform and deploy from source via control panel.
+
+3) Prerequisites
+- DigitalOcean account with App Platform access.
+- DigitalOcean Personal Access Token (write permissions for App Platform) stored in GitHub Secrets as DIGITALOCEAN_ACCESS_TOKEN.
+- App Platform linked to the GitHub account that hosts your fork/mirror of n8n.
+- (Optional) Domain/subdomain you control for friendly access URL.
+- Local single environment file (e.g., .env) to manage sensitive variables; do not commit to version control.
+
+4) Repository Preparation
+- Fork or mirror https://github.com/n8n-io/n8n into your GitHub account.
+- Create a deployment folder (e.g., .do/) containing the App Spec file (JSON) describing the App Platform service(s) and environment.
+- Add a GitHub Actions workflow in the forked repo to deploy the app on push to main.
+
+5) App Platform Service Design (App Spec)
+- App Name: n8nDeployFromGithub.
+- Region: Choose closest to your users (e.g., nyc, sfo, fra).
+- Components: One web service for n8n.
+- Build Source: Option A: Build from source (Node.js auto-detection). Option B: Build and push Docker image to DigitalOcean Container Registry (recommended for reproducibility), then reference image in App Spec.
+- Runtime: Single instance to start; scale later as needed.
+- Health Check: HTTP 200 on base path or a lightweight health path after boot.
+- Internal Port: 5678 (n8n default) exposed via App Platform HTTP.
+
+6) Environment Variables and Secrets (examples)
+- Core deployment:
+  - N8N_PROTOCOL (e.g., https)
+  - N8N_HOST (your app domain or App Platform default hostname)
+  - N8N_PORT (5678)
+  - WEBHOOK_URL (public URL used for registering inbound webhooks)
+- Security:
+  - N8N_ENCRYPTION_KEY (random strong secret to encrypt stored credentials)
+- Database (PostgreSQL):
+  - Set n8n database variables for Postgres (host, port, database, user, password), and DB type.
+- Optional binary storage (advanced/enterprise):
+  - S3/Spaces configuration (endpoint/region, bucket, access key/secret) if external storage is needed and supported.
+
+7) DigitalOcean Resources to Provision
+- Managed PostgreSQL: Create a cluster, capture connection details (host, port, database, user, password, CA cert if needed).
+- (Optional) Spaces bucket: Create bucket, generate access keys if external binary storage is required.
+- App Platform Application: Create the app using the App Spec with name n8nDeployFromGithub.
+
+8) CI/CD Setup (GitHub Actions)
+- Workflow triggers: push to main branch and manual dispatch.
+- Steps:
+  - Checkout repo.
+  - Build (from source) and deploy with DigitalOcean app action; or build Docker image, push to DOCR, then update App Platform using the app action.
+- Secrets:
+  - DIGITALOCEAN_ACCESS_TOKEN stored in GitHub Secrets.
+
+9) Domain, TLS, and Access
+- Optionally assign a custom domain/subdomain to the App Platform app.
+- Use App Platform-managed certificates or provide your own; ensure HTTPS is enabled.
+
+10) Initial Deployment and Verification
+- Run the CI job to create/update the App Platform app.
+- Confirm the app reaches running state.
+- Access the n8n editor UI via the provided hostname or custom domain.
+
+11) Post-Deploy Validation
+- Create a simple test workflow and execute it.
+- Verify webhook URLs display correctly and are reachable.
+- Validate database persistence by confirming credentials/workflows remain after redeploy.
+
+12) Observability, Backups, and Operations
+- Enable alerts in App Platform (deployment failures, resource limits).
+- Review logs from App Platform.
+- Configure automatic backups for Managed PostgreSQL; test restore procedures.
+
+13) Scaling and Resilience
+- Start with single instance; scale up size or count if needed.
+- Keep app stateless; avoid writing to local filesystem beyond temporary usage.
+- If using multiple instances, ensure externalized storage for any shared state (DB, object storage).
+
+14) Testing and Environment Management
+- Create a testing folder structure in the repository for unit/feature tests if needed, with environment configurations for local, development, and production.
+- Store sensitive test configuration values in the single local .env file; ensure .env is excluded from commits.
+- Run tests before pushing changes that trigger deployment.
+
+15) Risks and Mitigations
+- Ephemeral filesystem: use DB and object storage; avoid local persistence.
+- Secret management: store sensitive values in GitHub Secrets and App Platform environment; never commit.
+- Build/release consistency: prefer container image approach for reproducible deployments.
+
+16) Next Steps
+- Confirm this plan.
+- After confirmation, proceed to: (1) provision Managed PostgreSQL, (2) prepare App Spec, (3) configure GitHub Action and secrets, (4) perform initial deployment, (5) validate and iterate.

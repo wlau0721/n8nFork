@@ -1,0 +1,47 @@
+name: Deploy to DigitalOcean App Platform
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+    
+    - name: Deploy to App Platform
+      run: |
+        # Update app.yaml with secrets before deployment
+        sed -i 's/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g' app.yaml
+        sed -i 's/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g' app.yaml
+        sed -i 's/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g' app.yaml
+        
+        # Deploy or update the app
+        if doctl apps list | grep -q "n8n-app"; then
+          echo "Updating existing app..."
+          APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}')
+          doctl apps update $APP_ID --spec app.yaml
+        else
+          echo "Creating new app..."
+          doctl apps create --spec app.yaml
+        fi
+        
+    - name: Wait for deployment
+      run: |
+        echo "Waiting for deployment to complete..."
+        sleep 60
+        
+    - name: Get app info
+      run: |
+        echo "App deployment status:"
+        doctl apps list
