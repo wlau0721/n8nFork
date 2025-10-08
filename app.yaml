@@ -17,12 +17,15 @@ services:
     
     # Build configuration
     build_command: |
-      # [Commented out] npm ci --production=false  # Reason: no package-lock.json exists in this repo; npm ci would fail
-      # [Commented out] npm run build              # Reason: the published n8n npm package is prebuilt; an explicit build step is not required
-      npm install --omit=dev
+      # [Commented out] npm install --omit=dev            # Reason: without a package.json, this would not install n8n
+      # Install n8n directly so we don't need the source repository code
+      npm init -y
+      npm install --omit=dev n8n
+      echo "n8n installed via npm"
     
     # Runtime configuration
-    run_command: npm start
+    # [Commented out] run_command: npm start  # Reason: repository does not contain a package.json/start script; run n8n via npx
+    run_command: npx n8n
     
     # Instance configuration
     instance_count: 1
