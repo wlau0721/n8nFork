@@ -24,13 +24,13 @@ services:
       echo "n8n installed via npm"
     
     # Runtime configuration
-    # [Commented out] run_command: npm start  # Reason: repository does not contain a package.json/start script; run n8n via npx
-    run_command: npx n8n
+    # [Commented out] run_command: npx n8n  # Reason: Explicitly run start to ensure HTTP server starts; 'n8n' alone may not start the service in some versions
+    run_command: npx n8n start
     
     # Instance configuration
     instance_count: 1
-    # [Commented out] instance_size_slug: basic-xxs  # Reason: insufficient resources to install n8n dependencies reliably on App Platform
-    instance_size_slug: basic-s                      # Upgrade to a larger plan to ensure npm install completes successfully
+    # [Commented out] instance_size_slug: basic-s  # Reason: invalid slug for App Platform spec; use apps-s-1vcpu-1gb per DigitalOcean spec/pricing
+    instance_size_slug: apps-s-1vcpu-1gb  # Upgraded to a supported slug to ensure npm install completes successfully
     
     # HTTP configuration
     http_port: 8080
@@ -51,7 +51,8 @@ services:
       - key: N8N_PORT
         value: "8080"
       - key: N8N_LISTEN_ADDRESS
-        value: 0.0.0.0
+        # [Commented out] value: 0.0.0.0  # Reason: ensure explicit string value and avoid YAML/IP parsing ambiguities
+        value: "0.0.0.0"
       - key: N8N_PROTOCOL
         # [Commented out] value: https  # Reason: App Platform handles HTTPS at ingress; n8n should run HTTP internally to avoid requiring SSL cert/key
         value: http
@@ -97,19 +98,39 @@ services:
         value: "false"
       - key: N8N_DIAGNOSTICS_ENABLED
         value: "false"
+      - key: QUEUE_HEALTH_CHECK_ACTIVE
+        value: "true"
+      - key: USE_NPM_INSTALL
+        scope: BUILD_TIME
+        value: "true"
       # SECURITY: Add these as ENCRYPTED environment variables in App Platform dashboard:
       # DB_POSTGRESDB_PASSWORD (use the generated password from deployment setup)
       # N8N_ENCRYPTION_KEY (generate a 32-character random string)
       # N8N_USER_MANAGEMENT_JWT_SECRET (generate a secure random string)
+      # [Commented out] - key: DB_POSTGRESDB_PASSWORD
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   # Reason: during app creation, missing secret values cause runtime failure; we inject placeholders and replace via GitHub Actions
       - key: DB_POSTGRESDB_PASSWORD
         scope: RUN_TIME
         type: SECRET
+        value: DB_POSTGRESDB_PASSWORD_PLACEHOLDER
+      # [Commented out] - key: N8N_ENCRYPTION_KEY
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   # Reason: during app creation, missing secret values cause runtime failure; we inject placeholders and replace via GitHub Actions
       - key: N8N_ENCRYPTION_KEY
         scope: RUN_TIME
         type: SECRET
+        value: N8N_ENCRYPTION_KEY_PLACEHOLDER
+      # [Commented out] - key: N8N_USER_MANAGEMENT_JWT_SECRET
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   # Reason: during app creation, missing secret values cause runtime failure; we inject placeholders and replace via GitHub Actions
       - key: N8N_USER_MANAGEMENT_JWT_SECRET
         scope: RUN_TIME
         type: SECRET
+        value: N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER
       
       # Binary data storage configuration (uncomment if using DigitalOcean Spaces)
       # - key: N8N_DEFAULT_BINARY_DATA_MODE
@@ -121,9 +142,10 @@ services:
       # - key: N8N_BINARY_DATA_S3_BUCKET
       #   value: your-spaces-bucket-name  # Replace with your bucket name
     
-    # Routes configuration
-    routes:
-      - path: /
+    # [Commented out] Routes configuration
+    # Reason: 'routes' on services is deprecated in favor of top-level ingress rules; see DigitalOcean App Spec reference
+    # routes:
+    #   - path: /
     
     # Resource limits
     # Uncomment and adjust based on your needs
@@ -177,14 +199,14 @@ services:
 #     instance_count: 1
 #     instance_size_slug: basic-xxs
 
-# Ingress configuration (for custom domains)
-# ingress:
-#   rules:
-#     - match:
-#         path:
-#           prefix: /
-#       component:
-#         name: n8n-web
+# Ingress configuration (enabled)
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /
+      component:
+        name: n8n-web
 
 # Alerts configuration
 # alerts:

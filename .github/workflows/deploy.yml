@@ -34,10 +34,11 @@ jobs:
     - name: Deploy to App Platform
       run: |
         set -euxo pipefail
-        # [Commented out] Placeholder replacement not needed because app.yaml uses SECRET variables managed by App Platform
-        # sed -i 's/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g' app.yaml  # Disabled: handled by App Platform
-        # sed -i 's/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g' app.yaml          # Disabled: handled by App Platform
-        # sed -i 's/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g' app.yaml  # Disabled: handled by App Platform
+        # Replace secret placeholders in app.yaml using encrypted GitHub secrets at deploy time
+        # Use proper escaping for special characters in sed replacement
+        sed -i "s/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g" app.yaml
+        sed -i "s/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g" app.yaml
+        sed -i "s/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g" app.yaml
         
         # Deploy or update the app
         if doctl apps list | grep -q "n8n-app"; then
@@ -67,4 +68,8 @@ jobs:
         if [ -n "$APP_ID" ]; then
           echo "Fetching build logs for n8n-web component (if available)"
           doctl apps logs "$APP_ID" n8n-web --type build || true
+          echo "Fetching deploy logs for n8n-web component (if available)"
+          doctl apps logs "$APP_ID" n8n-web --type deploy || true
+          echo "Fetching run logs for n8n-web component (if available)"
+          doctl apps logs "$APP_ID" n8n-web --type run || true
         fi
