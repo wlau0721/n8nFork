@@ -163,16 +163,44 @@ jobs:
         fi
         
         if [ -z "$INGRESS" ]; then
-          echo "Default ingress URL still not found in app JSON; falling back to filtered doctl apps list."
+          echo "Default ingress URL still not found in app JSON; falling back to filtered doctl apps list (JSON)."
           # [Commented out] INGRESS=$(doctl apps list --format DefaultIngress --no-header | head -n 1 || true)
           # Reason: head -n 1 may select the wrong app; filter by Spec.Name to ensure correct match.
           INGRESS=$(doctl apps list -o json | jq -r --arg target "$TARGET_NAME" '.[] | select(.spec.name==$target) | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
+        fi
+        
+        # Function: Table-format fallback via doctl apps get/list (DefaultIngress, LiveURL)
+        if [ -z "$INGRESS" ]; then
+          echo "Trying table-format fallback from doctl apps get (DefaultIngress/LiveURL)"
+          TABLE_DEFAULT=$(doctl apps get "$APP_ID" --format DefaultIngress --no-header | tr -d '\r' || true)
+          TABLE_LIVE=$(doctl apps get "$APP_ID" --format LiveURL --no-header | tr -d '\r' || true)
+          if [ -n "$TABLE_DEFAULT" ]; then
+            INGRESS="$TABLE_DEFAULT"
+            RES_SRC="table:get:DefaultIngress"
+          elif [ -n "$TABLE_LIVE" ]; then
+            INGRESS="$TABLE_LIVE"
+            RES_SRC="table:get:LiveURL"
+          fi
+        fi
+        
+        if [ -z "$INGRESS" ]; then
+          echo "Trying table-format fallback from doctl apps list filtered by Spec.Name (DefaultIngress/LiveURL)"
+          LIST_DEFAULT=$(doctl apps list --format ID,Spec.Name,DefaultIngress,LiveURL --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $3; exit}' || true)
+          LIST_LIVE=$(doctl apps list --format ID,Spec.Name,DefaultIngress,LiveURL --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $4; exit}' || true)
+          if [ -n "$LIST_DEFAULT" ]; then
+            INGRESS="$LIST_DEFAULT"
+            RES_SRC="table:list:DefaultIngress"
+          elif [ -n "$LIST_LIVE" ]; then
+            INGRESS="$LIST_LIVE"
+            RES_SRC="table:list:LiveURL"
+          fi
         fi
         
         if [ -z "$INGRESS" ]; then
           echo "Could not determine ingress URL; skipping health probe."
           exit 0
         fi
+        echo "Resolved ingress via ${RES_SRC:-json}: $INGRESS"
         echo "Default Ingress URL: $INGRESS"
         # Probe health endpoint with up to 3 retries
         for i in 1 2 3; do
