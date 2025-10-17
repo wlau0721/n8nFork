@@ -219,6 +219,24 @@ jobs:
         echo "Resolved ingress via ${RES_SRC:-json}: $INGRESS"
         echo "Default Ingress URL: $INGRESS"
         # Probe health endpoint with up to 3 retries
+        
+        # Function: Collect DigitalOcean App Platform logs for diagnostics (non-fatal)
+        echo "Collecting DigitalOcean App Platform logs for diagnostics..."
+        COMPONENT_NAME="${COMPONENT_NAME:-n8n-web}"
+        mkdir -p diagnostics
+        # [Commented out] doctl apps logs "$APP_ID" --follow > diagnostics/all.log 2>&1 || true
+        # Reason: Large/unfiltered logs can overwhelm output; collect scoped logs below instead.
+        doctl apps logs "$APP_ID" --component "$COMPONENT_NAME" --follow=false > diagnostics/run-${COMPONENT_NAME}.log 2>&1 || true
+        doctl apps logs "$APP_ID" --type build --follow=false > diagnostics/build.log 2>&1 || true
+        doctl apps logs "$APP_ID" --type deploy --follow=false > diagnostics/deploy.log 2>&1 || true
+        doctl apps get "$APP_ID" -o json > diagnostics/app_get.json 2>&1 || true
+        
+        echo "---- Recent run logs (${COMPONENT_NAME}) ----"
+        tail -n 200 diagnostics/run-${COMPONENT_NAME}.log || true
+        echo "---- Recent build logs ----"
+        tail -n 200 diagnostics/build.log || true
+        echo "---- Recent deploy logs ----"
+        tail -n 200 diagnostics/deploy.log || true
         for i in 1 2 3; do
           echo "Health probe attempt $i..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$INGRESS/healthz")
