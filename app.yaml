@@ -10,10 +10,14 @@ services:
     environment_slug: node-js
     # Source configuration - connects to your GitHub repository
     source_dir: /
-    github:
-      repo: wlau0721/n8nFork  # Your forked n8n repository
+    # [Commented out] github:
+    #   repo: wlau0721/n8nFork  # Your forked n8n repository
+    #   branch: main
+    #   deploy_on_push: true
+    # Reason: DigitalOcean App Platform reported "GitHub user does not have access to wlau0721/n8nFork" during app creation; using generic Git clone URL avoids GitHub OAuth integration requirements while keeping the repo public and accessible.
+    git:
+      repo_clone_url: https://github.com/wlau0721/n8nFork.git
       branch: main
-      deploy_on_push: true
     
     # Build configuration
     build_command: |
