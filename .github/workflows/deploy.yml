@@ -38,10 +38,15 @@ jobs:
       run: |
         # [Commented out] set -euxo pipefail
         # Reason: Using pipefail with grep can cause the step to exit when the app name is not found.
-        set -eux
+        # [Commented out] set -eux
+        # Reason: The -u (nounset) option causes the script to exit on referencing undefined variables (e.g., 'target'); remove -u to allow robust error handling.
+        set -ex
+        
+        # Target App Platform application name (used for ID detection)
+        TARGET_NAME="n8n-app"
         
         # Replace secret placeholders in app.yaml using encrypted GitHub secrets at deploy time
-        # SAFETY: Some secrets may contain special characters (/, \\, |, &). Use a helper to escape for sed replacement.
+        # SAFETY: Some secrets may contain special characters (/, \, |, &). Use a helper to escape for sed replacement.
         DB_PW='${{ secrets.DB_POSTGRESDB_PASSWORD }}'
         ENC_KEY='${{ secrets.N8N_ENCRYPTION_KEY }}'
         JWT_SECRET='${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}'
@@ -65,28 +70,7 @@ jobs:
         
         # Deploy or update the app
         # Determine APP_ID robustly without causing failure when not found
-        # [Commented out] if doctl apps list | grep -q "n8n-app"; then
-        # [Commented out]   echo "Updating existing app..."
-        # [Commented out]   APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}')
-        # [Commented out]   doctl apps update "$APP_ID" --spec app.yaml
-        # [Commented out] else
-        # [Commented out]   echo "Creating new app..."
-        # [Commented out]   doctl apps create --spec app.yaml
-        # [Commented out] fi
-        # Reason: The grep pipeline may exit non-zero under pipefail, causing the whole step to fail.
-        # [Commented out] Simple create/update flow that fails when create returns 409
-        # APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
-        # if [ -n "${APP_ID}" ]; then
-        #   echo "Updating existing app ${APP_ID}..."
-        #   doctl apps update "${APP_ID}" --spec app.yaml --verbose
-        # else
-        #   echo "Creating new app..."
-        #   doctl apps create --spec app.yaml --verbose
-        # fi
-        # Reason: When the app already exists but APP_ID detection fails, create returns HTTP 409 and the job exits.
-
-        # Robust flow: attempt to detect existing app; if not found, try create and handle 409 by falling back to update.
-        APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
         if [ -n "${APP_ID}" ]; then
           echo "Existing app detected: ${APP_ID}. Updating..."
           doctl apps update "${APP_ID}" --spec app.yaml --verbose
@@ -100,28 +84,13 @@ jobs:
             echo "Create succeeded."
           else
             echo "Create failed with exit code ${CREATE_EXIT}. Output:" && echo "${CREATE_OUTPUT}"
-            # [Commented out] Fallback based only on matching specific error text
-            # if echo "${CREATE_OUTPUT}" | grep -qi "App name already exists"; then
-            #   echo "Conflict detected (409): App name already exists. Falling back to update flow..."
-            #   APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
-            #   if [ -n "${APP_ID}" ]; then
-            #     echo "Updating existing app ${APP_ID}..."
-            #     doctl apps update "${APP_ID}" --spec app.yaml --verbose
-            #   else
-            #     echo "Unable to determine existing app ID after 409. Listing apps for debugging:" && doctl apps list --format ID,Name || true
-            #     exit 1
-            #   fi
-            # else
-            #   exit ${CREATE_EXIT}
-            # fi
-            # Reason: Error messages vary; rather than rely on matching text, attempt update whenever the app with target name exists.
-
-            APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
+            # Attempt update if the app with target name now exists (e.g., 409 conflict)
+            APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
             if [ -n "${APP_ID}" ]; then
-              echo "Create failed but app '${target}' exists (ID=${APP_ID}). Attempting update..."
+              echo "Create failed but app '${TARGET_NAME}' exists (ID=${APP_ID}). Attempting update..."
               doctl apps update "${APP_ID}" --spec app.yaml --verbose
             else
-              echo "Create failed and no existing app named '${target}' was found. Aborting."
+              echo "Create failed and no existing app named '${TARGET_NAME}' was found. Aborting."
               exit ${CREATE_EXIT}
             fi
           fi
@@ -131,10 +100,10 @@ jobs:
       run: |
         echo "Waiting for deployment to complete..."
         sleep 60
+        # Target App Platform application name
+        TARGET_NAME="n8n-app"
         # Try to fetch recent deployments and show status for visibility
-        # [Commented out] APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
-        # Reason: Use awk-only filter that does not fail when grep finds no matches.
-        APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
         if [ -n "$APP_ID" ]; then
           echo "Recent deployments for app $APP_ID:" && doctl apps list-deployments "$APP_ID" || true
         fi
@@ -143,9 +112,9 @@ jobs:
       run: |
         echo "App deployment status:"
         doctl apps list || true
-        # [Commented out] APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
-        # Reason: Use awk-only filter that does not fail when grep finds no matches.
-        APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
+        # Target App Platform application name
+        TARGET_NAME="n8n-app"
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
         if [ -n "$APP_ID" ]; then
           echo "Fetching build logs for n8n-web component (if available)"
           doctl apps logs "$APP_ID" n8n-web --type build || true
