@@ -36,21 +36,51 @@ jobs:
     
     - name: Deploy to App Platform
       run: |
-        set -euxo pipefail
+        # [Commented out] set -euxo pipefail
+        # Reason: Using pipefail with grep can cause the step to exit when the app name is not found.
+        set -eux
+        
         # Replace secret placeholders in app.yaml using encrypted GitHub secrets at deploy time
-        # Use proper escaping for special characters in sed replacement
-        sed -i "s/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g" app.yaml
-        sed -i "s/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g" app.yaml
-        sed -i "s/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g" app.yaml
+        # SAFETY: Some secrets may contain special characters (/, \\, |, &). Use a helper to escape for sed replacement.
+        DB_PW='${{ secrets.DB_POSTGRESDB_PASSWORD }}'
+        ENC_KEY='${{ secrets.N8N_ENCRYPTION_KEY }}'
+        JWT_SECRET='${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}'
+        
+        # Fail fast with a clear message if any required secrets are missing
+        if [ -z "${DB_PW}" ] || [ -z "${ENC_KEY}" ] || [ -z "${JWT_SECRET}" ]; then
+          echo "Missing one or more GitHub secrets: DB_POSTGRESDB_PASSWORD, N8N_ENCRYPTION_KEY, N8N_USER_MANAGEMENT_JWT_SECRET";
+          exit 1;
+        fi
+
+        # Helper: escape characters that are special in sed replacements
+        escape_sed() { echo "$1" | sed -e 's/[\\/&|]/\\&/g'; }
+        
+        # [Commented out] sed -i "s/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g" app.yaml
+        # [Commented out] sed -i "s/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g" app.yaml
+        # [Commented out] sed -i "s/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g" app.yaml
+        # Reason: The above lines can break when secrets contain '/'. Use '|' delimiter and proper escaping.
+        sed -i "s|DB_POSTGRESDB_PASSWORD_PLACEHOLDER|$(escape_sed \"${DB_PW}\")|g" app.yaml
+        sed -i "s|N8N_ENCRYPTION_KEY_PLACEHOLDER|$(escape_sed \"${ENC_KEY}\")|g" app.yaml
+        sed -i "s|N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER|$(escape_sed \"${JWT_SECRET}\")|g" app.yaml
         
         # Deploy or update the app
-        if doctl apps list | grep -q "n8n-app"; then
-          echo "Updating existing app..."
-          APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}')
-          doctl apps update "$APP_ID" --spec app.yaml
+        # Determine APP_ID robustly without causing failure when not found
+        # [Commented out] if doctl apps list | grep -q "n8n-app"; then
+        # [Commented out]   echo "Updating existing app..."
+        # [Commented out]   APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}')
+        # [Commented out]   doctl apps update "$APP_ID" --spec app.yaml
+        # [Commented out] else
+        # [Commented out]   echo "Creating new app..."
+        # [Commented out]   doctl apps create --spec app.yaml
+        # [Commented out] fi
+        # Reason: The grep pipeline may exit non-zero under pipefail, causing the whole step to fail.
+        APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
+        if [ -n "${APP_ID}" ]; then
+          echo "Updating existing app ${APP_ID}..."
+          doctl apps update "${APP_ID}" --spec app.yaml --verbose
         else
           echo "Creating new app..."
-          doctl apps create --spec app.yaml
+          doctl apps create --spec app.yaml --verbose
         fi
     
     - name: Wait for deployment
@@ -58,7 +88,9 @@ jobs:
         echo "Waiting for deployment to complete..."
         sleep 60
         # Try to fetch recent deployments and show status for visibility
-        APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
+        # [Commented out] APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
+        # Reason: Use awk-only filter that does not fail when grep finds no matches.
+        APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
         if [ -n "$APP_ID" ]; then
           echo "Recent deployments for app $APP_ID:" && doctl apps list-deployments "$APP_ID" || true
         fi
@@ -67,7 +99,9 @@ jobs:
       run: |
         echo "App deployment status:"
         doctl apps list || true
-        APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
+        # [Commented out] APP_ID=$(doctl apps list --format ID,Name --no-header | grep "n8n-app" | awk '{print $1}' || true)
+        # Reason: Use awk-only filter that does not fail when grep finds no matches.
+        APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
         if [ -n "$APP_ID" ]; then
           echo "Fetching build logs for n8n-web component (if available)"
           doctl apps logs "$APP_ID" n8n-web --type build || true
