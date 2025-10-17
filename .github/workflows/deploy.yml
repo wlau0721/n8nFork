@@ -74,13 +74,46 @@ jobs:
         # [Commented out]   doctl apps create --spec app.yaml
         # [Commented out] fi
         # Reason: The grep pipeline may exit non-zero under pipefail, causing the whole step to fail.
-        APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
+        # [Commented out] Simple create/update flow that fails when create returns 409
+        # APP_ID=$(doctl apps list --format ID,Name --no-header | awk '$2=="n8n-app"{print $1; exit}' || true)
+        # if [ -n "${APP_ID}" ]; then
+        #   echo "Updating existing app ${APP_ID}..."
+        #   doctl apps update "${APP_ID}" --spec app.yaml --verbose
+        # else
+        #   echo "Creating new app..."
+        #   doctl apps create --spec app.yaml --verbose
+        # fi
+        # Reason: When the app already exists but APP_ID detection fails, create returns HTTP 409 and the job exits.
+
+        # Robust flow: attempt to detect existing app; if not found, try create and handle 409 by falling back to update.
+        APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
         if [ -n "${APP_ID}" ]; then
-          echo "Updating existing app ${APP_ID}..."
+          echo "Existing app detected: ${APP_ID}. Updating..."
           doctl apps update "${APP_ID}" --spec app.yaml --verbose
         else
-          echo "Creating new app..."
-          doctl apps create --spec app.yaml --verbose
+          echo "No existing app detected; attempting to create..."
+          set +e
+          CREATE_OUTPUT=$(doctl apps create --spec app.yaml --verbose 2>&1)
+          CREATE_EXIT=$?
+          set -e
+          if [ ${CREATE_EXIT} -eq 0 ]; then
+            echo "Create succeeded."
+          else
+            echo "Create failed with exit code ${CREATE_EXIT}. Output:" && echo "${CREATE_OUTPUT}"
+            if echo "${CREATE_OUTPUT}" | grep -qi "App name already exists"; then
+              echo "Conflict detected (409): App name already exists. Falling back to update flow..."
+              APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
+              if [ -n "${APP_ID}" ]; then
+                echo "Updating existing app ${APP_ID}..."
+                doctl apps update "${APP_ID}" --spec app.yaml --verbose
+              else
+                echo "Unable to determine existing app ID after 409. Listing apps for debugging:" && doctl apps list --format ID,Name || true
+                exit 1
+              fi
+            else
+              exit ${CREATE_EXIT}
+            fi
+          fi
         fi
     
     - name: Wait for deployment
