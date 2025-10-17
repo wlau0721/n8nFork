@@ -174,10 +174,11 @@ jobs:
           echo "Trying table-format fallback from doctl apps get (DefaultIngress/LiveURL)"
           TABLE_DEFAULT=$(doctl apps get "$APP_ID" --format DefaultIngress --no-header | tr -d '\r' || true)
           TABLE_LIVE=$(doctl apps get "$APP_ID" --format LiveURL --no-header | tr -d '\r' || true)
-          if [ -n "$TABLE_DEFAULT" ]; then
+          # [Note] Some table outputs return literal '<nil>' when the field is empty; treat as empty.
+          if [ -n "$TABLE_DEFAULT" ] && [ "$TABLE_DEFAULT" != "<nil>" ]; then
             INGRESS="$TABLE_DEFAULT"
             RES_SRC="table:get:DefaultIngress"
-          elif [ -n "$TABLE_LIVE" ]; then
+          elif [ -n "$TABLE_LIVE" ] && [ "$TABLE_LIVE" != "<nil>" ]; then
             INGRESS="$TABLE_LIVE"
             RES_SRC="table:get:LiveURL"
           fi
@@ -187,12 +188,27 @@ jobs:
           echo "Trying table-format fallback from doctl apps list filtered by Spec.Name (DefaultIngress/LiveURL)"
           LIST_DEFAULT=$(doctl apps list --format ID,Spec.Name,DefaultIngress,LiveURL --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $3; exit}' || true)
           LIST_LIVE=$(doctl apps list --format ID,Spec.Name,DefaultIngress,LiveURL --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $4; exit}' || true)
-          if [ -n "$LIST_DEFAULT" ]; then
+          if [ -n "$LIST_DEFAULT" ] && [ "$LIST_DEFAULT" != "<nil>" ]; then
             INGRESS="$LIST_DEFAULT"
             RES_SRC="table:list:DefaultIngress"
-          elif [ -n "$LIST_LIVE" ]; then
+          elif [ -n "$LIST_LIVE" ] && [ "$LIST_LIVE" != "<nil>" ]; then
             INGRESS="$LIST_LIVE"
             RES_SRC="table:list:LiveURL"
+          fi
+        fi
+        
+        # Function: Normalize ingress URL (strip whitespace, ensure https:// scheme)
+        if [ -n "$INGRESS" ]; then
+          # [Commented out] echo "Ingress before normalization: $INGRESS"
+          # Reason: Reduce noisy logs; normalization should be transparent.
+          INGRESS=$(echo "$INGRESS" | tr -d '\r' | sed 's/^\s*//;s/\s*$//')
+          if [ "$INGRESS" = "<nil>" ] || [ "$INGRESS" = "null" ] || [ -z "$INGRESS" ]; then
+            echo "Ingress value indicates empty (nil/null); clearing for further fallbacks."
+            INGRESS=""
+          fi
+          if [ -n "$INGRESS" ] && ! echo "$INGRESS" | grep -Eiq '^https?://'; then
+            echo "Ingress missing scheme; prefixing https://"
+            INGRESS="https://$INGRESS"
           fi
         fi
         
