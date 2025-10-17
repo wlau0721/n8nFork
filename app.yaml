@@ -7,29 +7,30 @@ region: sfo3  # Change to your preferred region (nyc1, nyc3, ams3, sgp1, lon1, f
 
 services:
   - name: n8n-web
-    environment_slug: node-js
+    # [Commented out] environment_slug: node-js
+    # Reason: Using prebuilt container image; environment slug is not required for container images.
     # Source configuration - connects to your GitHub repository
-    source_dir: /
+    # [Commented out] source_dir: /
+    # Reason: Switching to container image; source_dir is not applicable.
     # [Commented out] github:
     #   repo: wlau0721/n8nFork  # Your forked n8n repository
     #   branch: main
     #   deploy_on_push: true
-    # Reason: DigitalOcean App Platform reported "GitHub user does not have access to wlau0721/n8nFork" during app creation; using generic Git clone URL avoids GitHub OAuth integration requirements while keeping the repo public and accessible.
-    git:
-      repo_clone_url: https://github.com/wlau0721/n8nFork.git
-      branch: main
-    
-    # Build configuration
-    build_command: |
-      # [Commented out] npm install --omit=dev            # Reason: without a package.json, this would not install n8n
-      # Install n8n directly so we don't need the source repository code
-      npm init -y
-      npm install --omit=dev n8n
-      echo "n8n installed via npm"
-    
+    # Reason: DigitalOcean App Platform reported "GitHub user does not have access to wlau0721/n8nFork"; switching to Docker Hub image avoids GitHub OAuth repo access issues.
+    # [Commented out] git:
+    #   repo_clone_url: https://github.com/wlau0721/n8nFork.git
+    #   branch: main
+    # Container image source (Docker Hub)
+    image:
+      registry_type: DOCKER_HUB
+      # [Commented out] registry: hub.docker.com
+      # Reason: For Docker Hub, the registry is implied (docker.io). Omitting avoids invalid values.
+      repository: n8nio/n8n
+      tag: latest
+
     # Runtime configuration
-    # [Commented out] run_command: npx n8n  # Reason: Explicitly run start to ensure HTTP server starts; 'n8n' alone may not start the service in some versions
-    run_command: npx n8n start
+    # [Commented out] run_command: n8n start
+    # Reason: Use the official image’s default entrypoint/command to avoid mismatches with container startup behavior.
     
     # Instance configuration
     instance_count: 1
@@ -37,7 +38,7 @@ services:
     instance_size_slug: apps-s-1vcpu-1gb  # Upgraded to a supported slug to ensure npm install completes successfully
     
     # HTTP configuration
-    http_port: 8080
+    http_port: 5678
     
     # Health check configuration
     health_check:
@@ -53,9 +54,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: N8N_PORT
-        value: "8080"
+        # [Commented out] value: "8080"  # Reason: Official n8n container defaults to 5678; align App Platform http_port
+        value: "5678"
       - key: N8N_LISTEN_ADDRESS
-        # [Commented out] value: 0.0.0.0  # Reason: ensure explicit string value and avoid YAML/IP parsing ambiguities
         value: "0.0.0.0"
       - key: N8N_PROTOCOL
         # [Commented out] value: https  # Reason: App Platform handles HTTPS at ingress; n8n should run HTTP internally to avoid requiring SSL cert/key
@@ -106,7 +107,8 @@ services:
         value: "true"
       - key: USE_NPM_INSTALL
         scope: BUILD_TIME
-        value: "true"
+        # [Commented out] value: "true"  # Reason: No build step when using prebuilt container image
+        value: "false"
       # SECURITY: Add these as ENCRYPTED environment variables in App Platform dashboard:
       # DB_POSTGRESDB_PASSWORD (use the generated password from deployment setup)
       # N8N_ENCRYPTION_KEY (generate a 32-character random string)
