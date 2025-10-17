@@ -26,7 +26,10 @@ jobs:
         doctl auth init -t "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
         doctl account get
     
-    - name: Debug: List existing apps
+    # NOTE: Previous step name used a colon which triggered a YAML parse error in GitHub Actions on line 29.
+    # Old line kept (commented) per project rules for traceability:
+    # - name: Debug: List existing apps
+    - name: Debug - List existing apps
       run: |
         # Purpose: Verify access to App Platform APIs and list current apps
         doctl apps list || (echo "doctl apps list failed"; exit 1)
