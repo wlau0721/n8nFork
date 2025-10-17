@@ -123,3 +123,45 @@ jobs:
           echo "Fetching run logs for n8n-web component (if available)"
           doctl apps logs "$APP_ID" n8n-web --type run || true
         fi
+
+    - name: Resolve app URL and probe health endpoint
+      run: |
+        # Purpose: Retrieve the default ingress URL and perform a health check against /healthz
+        set -e
+        TARGET_NAME="n8n-app"
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
+        if [ -z "$APP_ID" ]; then
+          echo "Unable to resolve APP_ID for '${TARGET_NAME}'. Skipping health probe."
+          exit 0
+        fi
+        # Install jq if not present
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "jq not found; installing..."
+          sudo apt-get update && sudo apt-get install -y jq
+        fi
+        # Attempt to read default ingress from app JSON with multiple fallbacks
+        APP_JSON=$(doctl apps get "$APP_ID" -o json)
+        INGRESS=$(echo "$APP_JSON" | jq -r '.[0].default_ingress // .[0].defaultIngress // .[0].live_url // .[0].liveUrl // empty')
+        if [ -z "$INGRESS" ]; then
+          echo "Default ingress URL not found in app JSON; falling back to doctl apps list."
+          INGRESS=$(doctl apps list --format DefaultIngress --no-header | head -n 1 || true)
+        fi
+        if [ -z "$INGRESS" ]; then
+          echo "Could not determine ingress URL; skipping health probe."
+          exit 0
+        fi
+        echo "Default Ingress URL: $INGRESS"
+        # Probe health endpoint with up to 3 retries
+        for i in 1 2 3; do
+          echo "Health probe attempt $i..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$INGRESS/healthz")
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "Health check OK (HTTP 200)."
+            exit 0
+          fi
+          echo "Health check not OK (HTTP $HTTP_CODE). Waiting before retry..."
+          sleep 10
+        done
+        echo "Health check failed after 3 attempts. Please review component logs above."
+        # Do not fail the workflow on health probe failure to allow log collection to be useful
+        exit 0

@@ -5,6 +5,7 @@
 name: n8n-app
 region: sfo3  # Change to your preferred region (nyc1, nyc3, ams3, sgp1, lon1, fra1, tor1, sfo3, blr1, syd1)
 
+# Function: Define the primary n8n web service component; handles HTTP traffic and runs the n8n editor UI
 services:
   - name: n8n-web
     # [Commented out] environment_slug: node-js
@@ -21,6 +22,7 @@ services:
     #   repo_clone_url: https://github.com/wlau0721/n8nFork.git
     #   branch: main
     # Container image source (Docker Hub)
+    # Function: Specify container image source and tag from Docker Hub for reproducible deployments
     image:
       registry_type: DOCKER_HUB
       # [Commented out] registry: hub.docker.com
@@ -36,14 +38,17 @@ services:
     # Reason: Use the official image’s default entrypoint/command to avoid mismatches with container startup behavior.
     
     # Instance configuration
-    instance_count: 1
+    # Function: Configure container instance sizing and count for App Platform
     # [Commented out] instance_size_slug: basic-s  # Reason: invalid slug for App Platform spec; use apps-s-1vcpu-1gb per DigitalOcean spec/pricing
+    instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb  # Upgraded to a supported slug to ensure npm install completes successfully
     
     # HTTP configuration
+    # Function: Expose the HTTP port used by n8n inside the container
     http_port: 5678
     
     # Health check configuration
+    # Function: Define health check behavior so App Platform can restart or mark unhealthy instances
     health_check:
       http_path: /healthz
       initial_delay_seconds: 60
@@ -209,6 +214,7 @@ services:
 #     instance_size_slug: basic-xxs
 
 # Ingress configuration (enabled)
+# Function: Route all incoming traffic to the n8n-web component using a single catch-all ingress rule
 ingress:
   rules:
     - match:
