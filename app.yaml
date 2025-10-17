@@ -25,7 +25,10 @@ services:
       registry_type: DOCKER_HUB
       # [Commented out] registry: hub.docker.com
       # Reason: For Docker Hub, the registry is implied (docker.io). Omitting avoids invalid values.
-      repository: n8nio/n8n
+      # [Commented out] repository: n8nio/n8n
+      # Reason: In App Platform spec for Docker Hub, the organization must be set via the `registry` field (e.g., `n8nio`) and the repository name via the `repository` field (e.g., `n8n`); using a combined value (`n8nio/n8n`) causes image lookup failures.
+      registry: n8nio
+      repository: n8n
       tag: latest
 
     # Runtime configuration
