@@ -100,17 +100,28 @@ jobs:
             echo "Create succeeded."
           else
             echo "Create failed with exit code ${CREATE_EXIT}. Output:" && echo "${CREATE_OUTPUT}"
-            if echo "${CREATE_OUTPUT}" | grep -qi "App name already exists"; then
-              echo "Conflict detected (409): App name already exists. Falling back to update flow..."
-              APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
-              if [ -n "${APP_ID}" ]; then
-                echo "Updating existing app ${APP_ID}..."
-                doctl apps update "${APP_ID}" --spec app.yaml --verbose
-              else
-                echo "Unable to determine existing app ID after 409. Listing apps for debugging:" && doctl apps list --format ID,Name || true
-                exit 1
-              fi
+            # [Commented out] Fallback based only on matching specific error text
+            # if echo "${CREATE_OUTPUT}" | grep -qi "App name already exists"; then
+            #   echo "Conflict detected (409): App name already exists. Falling back to update flow..."
+            #   APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
+            #   if [ -n "${APP_ID}" ]; then
+            #     echo "Updating existing app ${APP_ID}..."
+            #     doctl apps update "${APP_ID}" --spec app.yaml --verbose
+            #   else
+            #     echo "Unable to determine existing app ID after 409. Listing apps for debugging:" && doctl apps list --format ID,Name || true
+            #     exit 1
+            #   fi
+            # else
+            #   exit ${CREATE_EXIT}
+            # fi
+            # Reason: Error messages vary; rather than rely on matching text, attempt update whenever the app with target name exists.
+
+            APP_ID=$(doctl apps list --format ID,Name --no-header | awk -v target="n8n-app" '$2==target{print $1; exit}' || true)
+            if [ -n "${APP_ID}" ]; then
+              echo "Create failed but app '${target}' exists (ID=${APP_ID}). Attempting update..."
+              doctl apps update "${APP_ID}" --spec app.yaml --verbose
             else
+              echo "Create failed and no existing app named '${target}' was found. Aborting."
               exit ${CREATE_EXIT}
             fi
           fi
