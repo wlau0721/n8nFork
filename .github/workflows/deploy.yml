@@ -146,7 +146,7 @@ jobs:
         echo "App JSON top-level type: $(echo "$APP_JSON" | jq -r 'type' || echo 'unknown')"
         # [Commented out] INGRESS=$(echo "$APP_JSON" | jq -r '.default_ingress // .defaultIngress // .live_url // .liveUrl // empty')
         # Reason: The API may return either an array (of one object) or a single object; handle both forms.
-        INGRESS=$(echo "$APP_JSON" | jq -r 'if type=="array" then .[0] else . end | (.default_ingress // .defaultIngress // .live_url // .liveUrl // empty)' || true)
+        INGRESS=$(echo "$APP_JSON" | jq -r 'if type=="array" then .[0] else . end | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
         
         # Retry ingress resolution briefly in case the property is not yet populated
         if [ -z "$INGRESS" ]; then
@@ -155,7 +155,7 @@ jobs:
             sleep 10
             APP_JSON=$(doctl apps get "$APP_ID" -o json)
             echo "App JSON top-level type (retry $i): $(echo "$APP_JSON" | jq -r 'type' || echo 'unknown')"
-            INGRESS=$(echo "$APP_JSON" | jq -r 'if type=="array" then .[0] else . end | (.default_ingress // .defaultIngress // .live_url // .liveUrl // empty)' || true)
+            INGRESS=$(echo "$APP_JSON" | jq -r 'if type=="array" then .[0] else . end | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
             if [ -n "$INGRESS" ]; then
               break
             fi
@@ -166,7 +166,7 @@ jobs:
           echo "Default ingress URL still not found in app JSON; falling back to filtered doctl apps list."
           # [Commented out] INGRESS=$(doctl apps list --format DefaultIngress --no-header | head -n 1 || true)
           # Reason: head -n 1 may select the wrong app; filter by Spec.Name to ensure correct match.
-          INGRESS=$(doctl apps list --format ID,Spec.Name,DefaultIngress --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $3; exit}' || true)
+          INGRESS=$(doctl apps list -o json | jq -r --arg target "$TARGET_NAME" '.[] | select(.spec.name==$target) | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
         fi
         
         if [ -z "$INGRESS" ]; then
