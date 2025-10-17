@@ -126,7 +126,7 @@ jobs:
 
     - name: Resolve app URL and probe health endpoint
       run: |
-        # Purpose: Retrieve the default ingress URL and perform a health check against /healthz
+        # Function: Retrieve the default ingress URL and perform a health check against /healthz
         set -e
         TARGET_NAME="n8n-app"
         APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
@@ -141,11 +141,30 @@ jobs:
         fi
         # Attempt to read default ingress from app JSON with multiple fallbacks
         APP_JSON=$(doctl apps get "$APP_ID" -o json)
-        INGRESS=$(echo "$APP_JSON" | jq -r '.[0].default_ingress // .[0].defaultIngress // .[0].live_url // .[0].liveUrl // empty')
+        # [Commented out] INGRESS=$(echo "$APP_JSON" | jq -r '.[0].default_ingress // .[0].defaultIngress // .[0].live_url // .[0].liveUrl // empty')
+        # Reason: doctl apps get returns a single JSON object, not an array. Using [0] returns empty values.
+        INGRESS=$(echo "$APP_JSON" | jq -r '.default_ingress // .defaultIngress // .live_url // .liveUrl // empty')
+        
+        # Retry ingress resolution briefly in case the property is not yet populated
         if [ -z "$INGRESS" ]; then
-          echo "Default ingress URL not found in app JSON; falling back to doctl apps list."
-          INGRESS=$(doctl apps list --format DefaultIngress --no-header | head -n 1 || true)
+          echo "Default ingress URL not found yet; retrying resolution..."
+          for i in 1 2 3; do
+            sleep 10
+            APP_JSON=$(doctl apps get "$APP_ID" -o json)
+            INGRESS=$(echo "$APP_JSON" | jq -r '.default_ingress // .defaultIngress // .live_url // .liveUrl // empty')
+            if [ -n "$INGRESS" ]; then
+              break
+            fi
+          done
         fi
+        
+        if [ -z "$INGRESS" ]; then
+          echo "Default ingress URL still not found in app JSON; falling back to filtered doctl apps list."
+          # [Commented out] INGRESS=$(doctl apps list --format DefaultIngress --no-header | head -n 1 || true)
+          # Reason: head -n 1 may select the wrong app; filter by Spec.Name to ensure correct match.
+          INGRESS=$(doctl apps list --format ID,Spec.Name,DefaultIngress --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $3; exit}' || true)
+        fi
+        
         if [ -z "$INGRESS" ]; then
           echo "Could not determine ingress URL; skipping health probe."
           exit 0
