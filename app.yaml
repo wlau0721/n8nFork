@@ -1,0 +1,253 @@
+# DigitalOcean App Platform Specification for n8n Deployment
+# This file defines the infrastructure and deployment configuration
+# for the n8nDeployFromGithub application
+
+name: n8n-app
+region: sfo3  # Change to your preferred region (nyc1, nyc3, ams3, sgp1, lon1, fra1, tor1, sfo3, blr1, syd1)
+
+# Function: Define the primary n8n web service component; handles HTTP traffic and runs the n8n editor UI
+services:
+  - name: n8n-web
+    # [Commented out] environment_slug: node-js
+    # Reason: Using prebuilt container image; environment slug is not required for container images.
+    # Source configuration - connects to your GitHub repository
+    # [Commented out] source_dir: /
+    # Reason: Switching to container image; source_dir is not applicable.
+    # [Commented out] github:
+    #   repo: wlau0721/n8nFork  # Your forked n8n repository
+    #   branch: main
+    #   deploy_on_push: true
+    # Reason: DigitalOcean App Platform reported "GitHub user does not have access to wlau0721/n8nFork"; switching to Docker Hub image avoids GitHub OAuth repo access issues.
+    # [Commented out] git:
+    #   repo_clone_url: https://github.com/wlau0721/n8nFork.git
+    #   branch: main
+    # Container image source (Docker Hub)
+    # Function: Specify container image source and tag from Docker Hub for reproducible deployments
+    image:
+      registry_type: DOCKER_HUB
+      # [Commented out] registry: hub.docker.com
+      # Reason: For Docker Hub, the registry is implied (docker.io). Omitting avoids invalid values.
+      # [Commented out] repository: n8nio/n8n
+      # Reason: In App Platform spec for Docker Hub, the organization must be set via the `registry` field (e.g., `n8nio`) and the repository name via the `repository` field (e.g., `n8n`); using a combined value (`n8nio/n8n`) causes image lookup failures.
+      registry: n8nio
+      repository: n8n
+      tag: latest
+
+    # Runtime configuration
+    # [Commented out] run_command: n8n start
+    # Reason: Use the official imageâ€™s default entrypoint/command to avoid mismatches with container startup behavior.
+    
+    # Instance configuration
+    # Function: Configure container instance sizing and count for App Platform
+    # [Commented out] instance_size_slug: basic-s  # Reason: invalid slug for App Platform spec; use apps-s-1vcpu-1gb per DigitalOcean spec/pricing
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb  # Upgraded to a supported slug to ensure npm install completes successfully
+    
+    # HTTP configuration
+    # Function: Expose the HTTP port used by n8n inside the container
+    http_port: 5678
+    
+    # Health check configuration
+    # Function: Define health check behavior so App Platform can restart or mark unhealthy instances
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 60
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    
+    # Environment variables (non-sensitive)
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: N8N_PORT
+        # [Commented out] value: "8080"  # Reason: Official n8n container defaults to 5678; align App Platform http_port
+        value: "5678"
+      - key: N8N_LISTEN_ADDRESS
+        value: "0.0.0.0"
+      - key: N8N_PROTOCOL
+        # [Commented out] value: https  # Reason: App Platform handles HTTPS at ingress; n8n should run HTTP internally to avoid requiring SSL cert/key
+        value: http
+      - key: N8N_HOST
+        scope: RUN_TIME
+        value: lexagora.ondigitalocean.app
+      - key: WEBHOOK_URL
+        value: https://lexagora.ondigitalocean.app/
+      - key: DB_TYPE
+        value: postgresdb
+      - key: APP_DOMAIN
+        scope: RUN_TIME
+        value: lexagora.ondigitalocean.app
+      # Database connection environment variables (configure these in App Platform dashboard)
+      - key: DB_POSTGRESDB_HOST
+        scope: RUN_TIME
+        value: n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
+      - key: DB_POSTGRESDB_PORT
+        scope: RUN_TIME
+        value: "25060"
+      - key: DB_POSTGRESDB_DATABASE
+        scope: RUN_TIME
+        value: defaultdb
+      - key: DB_POSTGRESDB_USER
+        scope: RUN_TIME
+        value: n8n_user
+      - key: DB_POSTGRESDB_SCHEMA
+        value: public
+      - key: DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED
+        scope: RUN_TIME
+        value: "false"
+      # [Commented out] - key: DB_POSTGRESDB_SSL
+      #   scope: RUN_TIME
+      #   value: "true"  # Reason: variable name is incorrect; use DB_POSTGRESDB_SSL_ENABLED per n8n docs
+      - key: DB_POSTGRESDB_SSL_ENABLED
+        scope: RUN_TIME
+        value: "true"
+      - key: N8N_LOG_LEVEL
+        value: info
+      - key: GENERIC_TIMEZONE
+        value: UTC
+      - key: N8N_METRICS
+        value: "false"
+      - key: N8N_DIAGNOSTICS_ENABLED
+        value: "false"
+      - key: QUEUE_HEALTH_CHECK_ACTIVE
+        value: "true"
+      - key: USE_NPM_INSTALL
+        scope: BUILD_TIME
+        # [Commented out] value: "true"  # Reason: No build step when using prebuilt container image
+        value: "false"
+      # SECURITY: Add these as ENCRYPTED environment variables in App Platform dashboard:
+      # DB_POSTGRESDB_PASSWORD (use the generated password from deployment setup)
+      # N8N_ENCRYPTION_KEY (generate a 32-character random string)
+      # N8N_USER_MANAGEMENT_JWT_SECRET (generate a secure random string)
+      # [Commented out] - key: DB_POSTGRESDB_PASSWORD
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   # Reason: during app creation, missing secret values cause runtime failure; we inject placeholders and replace via GitHub Actions
+      - key: DB_POSTGRESDB_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+        value: DB_POSTGRESDB_PASSWORD_PLACEHOLDER
+      # [Commented out] - key: N8N_ENCRYPTION_KEY
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   # Reason: during app creation, missing secret values cause runtime failure; we inject placeholders and replace via GitHub Actions
+      - key: N8N_ENCRYPTION_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: N8N_ENCRYPTION_KEY_PLACEHOLDER
+      # [Commented out] - key: N8N_USER_MANAGEMENT_JWT_SECRET
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #   # Reason: during app creation, missing secret values cause runtime failure; we inject placeholders and replace via GitHub Actions
+      - key: N8N_USER_MANAGEMENT_JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER
+      
+      # Binary data storage configuration (uncomment if using DigitalOcean Spaces)
+      # - key: N8N_DEFAULT_BINARY_DATA_MODE
+      #   value: s3
+      # - key: N8N_BINARY_DATA_S3_ENDPOINT
+      #   value: https://nyc3.digitaloceanspaces.com  # Change region as needed
+      # - key: N8N_BINARY_DATA_S3_REGION
+      #   value: nyc3  # Change to your Spaces region
+      # - key: N8N_BINARY_DATA_S3_BUCKET
+      #   value: your-spaces-bucket-name  # Replace with your bucket name
+    
+    # [Commented out] Routes configuration
+    # Reason: 'routes' on services is deprecated in favor of top-level ingress rules; see DigitalOcean App Spec reference
+    # routes:
+    #   - path: /
+    
+    # Resource limits
+    # Uncomment and adjust based on your needs
+    # resources:
+    #   cpu_kind: shared  # Options: shared, dedicated
+    #   cpus: "0.5"
+    #   memory_mib: 1024
+
+# [Disabled] databases section commented out â€” using external managed PostgreSQL via env vars to avoid invalid spec errors.
+# databases:
+#   - name: n8n-postgres
+#     engine: PG
+#     # Using existing managed database - connection details configured via environment variables
+#     # Database details:
+#     # Host: n8n-postgres-do-user-24961063-0.h.db.ondigitalocean.com
+#     # Port: 25060
+#     # Database: defaultdb
+#     # User: doadmin
+#     # SSL: Required
+
+# Static sites (if you have any documentation or landing pages)
+# static_sites:
+#   - name: docs
+#     source_dir: /docs
+#     github:
+#       repo: your-github-username/n8n-docs
+#       branch: main
+#     build_command: npm run build
+#     output_dir: /dist
+
+# Jobs (for one-time or scheduled tasks)
+# jobs:
+#   - name: db-migration
+#     source_dir: /
+#     github:
+#       repo: your-github-username/n8n
+#       branch: main
+#     run_command: npm run db:migrate
+#     instance_count: 1
+#     instance_size_slug: basic-xxs
+#     kind: PRE_DEPLOY  # Options: PRE_DEPLOY, POST_DEPLOY, CRON
+
+# Workers (for background processing)
+# workers:
+#   - name: n8n-worker
+#     source_dir: /
+#     github:
+#       repo: your-github-username/n8n
+#       branch: main
+#     run_command: npm run start:worker
+#     instance_count: 1
+#     instance_size_slug: basic-xxs
+
+# Ingress configuration (enabled)
+# Function: Route all incoming traffic to the n8n-web component using a single catch-all ingress rule
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /
+      component:
+        name: n8n-web
+
+# Alerts configuration
+# alerts:
+#   - rule: CPU_UTILIZATION
+#     disabled: false
+#     value: 80
+#   - rule: MEM_UTILIZATION
+#     disabled: false
+#     value: 80
+#   - rule: RESTART_COUNT
+#     disabled: false
+#     value: 5
+
+# Functions (for serverless functions if needed)
+# functions:
+#   - name: webhook-handler
+#     source_dir: /functions/webhook
+#     github:
+#       repo: your-github-username/n8n-functions
+#       branch: main
+#     routes:
+#       - path: /api/webhook
+
+# Domains (for custom domains)
+# domains:
+#   - domain: your-custom-domain.com
+#     type: PRIMARY
+#     wildcard: false
+#     zone: your-custom-domain.com
