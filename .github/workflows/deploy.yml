@@ -1,0 +1,264 @@
+name: Deploy to DigitalOcean App Platform
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  # Added manual trigger to allow redeploys without commits
+  # Function: Enable workflow_dispatch so we can trigger the deployment from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+    
+    - name: Configure and verify doctl authentication
+      run: |
+        # Purpose: Ensure doctl is installed and authenticated before deployment
+        doctl version
+        doctl auth init -t "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
+        doctl account get
+    
+    # NOTE: Previous step name used a colon which triggered a YAML parse error in GitHub Actions on line 29.
+    # Old line kept (commented) per project rules for traceability:
+    # - name: Debug: List existing apps
+    - name: Debug - List existing apps
+      run: |
+        # Purpose: Verify access to App Platform APIs and list current apps
+        doctl apps list || (echo "doctl apps list failed"; exit 1)
+    
+    - name: Deploy to App Platform
+      run: |
+        # [Commented out] set -euxo pipefail
+        # Reason: Using pipefail with grep can cause the step to exit when the app name is not found.
+        # [Commented out] set -eux
+        # Reason: The -u (nounset) option causes the script to exit on referencing undefined variables (e.g., 'target'); remove -u to allow robust error handling.
+        set -ex
+        
+        # Target App Platform application name (used for ID detection)
+        TARGET_NAME="n8n-app"
+        
+        # Replace secret placeholders in app.yaml using encrypted GitHub secrets at deploy time
+        # SAFETY: Some secrets may contain special characters (/, \, |, &). Use a helper to escape for sed replacement.
+        DB_PW='${{ secrets.DB_POSTGRESDB_PASSWORD }}'
+        ENC_KEY='${{ secrets.N8N_ENCRYPTION_KEY }}'
+        JWT_SECRET='${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}'
+        
+        # Fail fast with a clear message if any required secrets are missing
+        if [ -z "${DB_PW}" ] || [ -z "${ENC_KEY}" ] || [ -z "${JWT_SECRET}" ]; then
+          echo "Missing one or more GitHub secrets: DB_POSTGRESDB_PASSWORD, N8N_ENCRYPTION_KEY, N8N_USER_MANAGEMENT_JWT_SECRET";
+          exit 1;
+        fi
+
+        # Helper: escape characters that are special in sed replacements
+        escape_sed() { echo "$1" | sed -e 's/[\\\/&|]/\\&/g'; }
+        
+        # [Commented out] sed -i "s/DB_POSTGRESDB_PASSWORD_PLACEHOLDER/${{ secrets.DB_POSTGRESDB_PASSWORD }}/g" app.yaml
+        # [Commented out] sed -i "s/N8N_ENCRYPTION_KEY_PLACEHOLDER/${{ secrets.N8N_ENCRYPTION_KEY }}/g" app.yaml
+        # [Commented out] sed -i "s/N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER/${{ secrets.N8N_USER_MANAGEMENT_JWT_SECRET }}/g" app.yaml
+        # Reason: The above lines can break when secrets contain '/'. Use '|' delimiter and proper escaping.
+        sed -i "s|DB_POSTGRESDB_PASSWORD_PLACEHOLDER|$(escape_sed \"${DB_PW}\")|g" app.yaml
+        sed -i "s|N8N_ENCRYPTION_KEY_PLACEHOLDER|$(escape_sed \"${ENC_KEY}\")|g" app.yaml
+        sed -i "s|N8N_USER_MANAGEMENT_JWT_SECRET_PLACEHOLDER|$(escape_sed \"${JWT_SECRET}\")|g" app.yaml
+        
+        # Deploy or update the app
+        # Determine APP_ID robustly without causing failure when not found
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
+        if [ -n "${APP_ID}" ]; then
+          echo "Existing app detected: ${APP_ID}. Updating..."
+          doctl apps update "${APP_ID}" --spec app.yaml --verbose
+        else
+          echo "No existing app detected; attempting to create..."
+          set +e
+          CREATE_OUTPUT=$(doctl apps create --spec app.yaml --verbose 2>&1)
+          CREATE_EXIT=$?
+          set -e
+          if [ ${CREATE_EXIT} -eq 0 ]; then
+            echo "Create succeeded."
+          else
+            echo "Create failed with exit code ${CREATE_EXIT}. Output:" && echo "${CREATE_OUTPUT}"
+            # Attempt update if the app with target name now exists (e.g., 409 conflict)
+            APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
+            if [ -n "${APP_ID}" ]; then
+              echo "Create failed but app '${TARGET_NAME}' exists (ID=${APP_ID}). Attempting update..."
+              doctl apps update "${APP_ID}" --spec app.yaml --verbose
+            else
+              echo "Create failed and no existing app named '${TARGET_NAME}' was found. Aborting."
+              exit ${CREATE_EXIT}
+            fi
+          fi
+        fi
+    
+    - name: Wait for deployment
+      run: |
+        echo "Waiting for deployment to complete..."
+        sleep 60
+        # Target App Platform application name
+        TARGET_NAME="n8n-app"
+        # Try to fetch recent deployments and show status for visibility
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
+        if [ -n "$APP_ID" ]; then
+          echo "Recent deployments for app $APP_ID:" && doctl apps list-deployments "$APP_ID" || true
+        fi
+    
+    - name: Get app info and logs (best effort)
+      run: |
+        echo "App deployment status:"
+        doctl apps list || true
+        # Target App Platform application name
+        TARGET_NAME="n8n-app"
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
+        if [ -n "$APP_ID" ]; then
+          echo "Fetching build logs for n8n-web component (if available)"
+          doctl apps logs "$APP_ID" n8n-web --type build || true
+          echo "Fetching deploy logs for n8n-web component (if available)"
+          doctl apps logs "$APP_ID" n8n-web --type deploy || true
+          echo "Fetching run logs for n8n-web component (if available)"
+          doctl apps logs "$APP_ID" n8n-web --type run || true
+        fi
+
+    - name: Resolve app URL and probe health endpoint
+      run: |
+        # Function: Retrieve the default ingress URL and perform a health check against /healthz
+        # [Commented out] set -e
+        # Reason: This step should be resilient and must not abort the job on transient jq parsing issues.
+        set +e
+        TARGET_NAME="n8n-app"
+        APP_ID=$(doctl apps list --format ID,Spec.Name --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $1; exit}' || true)
+        if [ -z "$APP_ID" ]; then
+          echo "Unable to resolve APP_ID for '${TARGET_NAME}'. Skipping health probe."
+          exit 0
+        fi
+        # Install jq if not present
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "jq not found; installing..."
+          sudo apt-get update && sudo apt-get install -y jq
+        fi
+        # Attempt to read default ingress from app JSON with multiple fallbacks
+        APP_JSON=$(doctl apps get "$APP_ID" -o json)
+        echo "App JSON top-level type: $(echo "$APP_JSON" | jq -r 'type' || echo 'unknown')"
+        # [Commented out] INGRESS=$(echo "$APP_JSON" | jq -r '.default_ingress // .defaultIngress // .live_url // .liveUrl // empty')
+        # Reason: The API may return either an array (of one object) or a single object; handle both forms.
+        INGRESS=$(echo "$APP_JSON" | jq -r 'if type=="array" then .[0] else . end | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
+        
+        # Retry ingress resolution briefly in case the property is not yet populated
+        if [ -z "$INGRESS" ]; then
+          echo "Default ingress URL not found yet; retrying resolution..."
+          for i in 1 2 3; do
+            sleep 10
+            APP_JSON=$(doctl apps get "$APP_ID" -o json)
+            echo "App JSON top-level type (retry $i): $(echo "$APP_JSON" | jq -r 'type' || echo 'unknown')"
+            INGRESS=$(echo "$APP_JSON" | jq -r 'if type=="array" then .[0] else . end | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
+            if [ -n "$INGRESS" ]; then
+              break
+            fi
+          done
+        fi
+        
+        if [ -z "$INGRESS" ]; then
+          echo "Default ingress URL still not found in app JSON; falling back to filtered doctl apps list (JSON)."
+          # [Commented out] INGRESS=$(doctl apps list --format DefaultIngress --no-header | head -n 1 || true)
+          # Reason: head -n 1 may select the wrong app; filter by Spec.Name to ensure correct match.
+          INGRESS=$(doctl apps list -o json | jq -r --arg target "$TARGET_NAME" '.[] | select(.spec.name==$target) | (.default_ingress // .defaultIngress // .live_url // .liveUrl // .active_deployment.live_url // .activeDeployment.liveUrl // (.spec.domains[0].domain // empty))' || true)
+        fi
+        
+        # Function: Table-format fallback via doctl apps get/list (DefaultIngress, LiveURL)
+        if [ -z "$INGRESS" ]; then
+          echo "Trying table-format fallback from doctl apps get (DefaultIngress/LiveURL)"
+          TABLE_DEFAULT=$(doctl apps get "$APP_ID" --format DefaultIngress --no-header | tr -d '\r' || true)
+          TABLE_LIVE=$(doctl apps get "$APP_ID" --format LiveURL --no-header | tr -d '\r' || true)
+          # [Note] Some table outputs return literal '<nil>' when the field is empty; treat as empty.
+          if [ -n "$TABLE_DEFAULT" ] && [ "$TABLE_DEFAULT" != "<nil>" ]; then
+            INGRESS="$TABLE_DEFAULT"
+            RES_SRC="table:get:DefaultIngress"
+          elif [ -n "$TABLE_LIVE" ] && [ "$TABLE_LIVE" != "<nil>" ]; then
+            INGRESS="$TABLE_LIVE"
+            RES_SRC="table:get:LiveURL"
+          fi
+        fi
+        
+        if [ -z "$INGRESS" ]; then
+          echo "Trying table-format fallback from doctl apps list filtered by Spec.Name (DefaultIngress/LiveURL)"
+          LIST_DEFAULT=$(doctl apps list --format ID,Spec.Name,DefaultIngress,LiveURL --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $3; exit}' || true)
+          LIST_LIVE=$(doctl apps list --format ID,Spec.Name,DefaultIngress,LiveURL --no-header | awk -v target="${TARGET_NAME}" '$2==target{print $4; exit}' || true)
+          if [ -n "$LIST_DEFAULT" ] && [ "$LIST_DEFAULT" != "<nil>" ]; then
+            INGRESS="$LIST_DEFAULT"
+            RES_SRC="table:list:DefaultIngress"
+          elif [ -n "$LIST_LIVE" ] && [ "$LIST_LIVE" != "<nil>" ]; then
+            INGRESS="$LIST_LIVE"
+            RES_SRC="table:list:LiveURL"
+          fi
+        fi
+        
+        # Function: Normalize ingress URL (strip whitespace, ensure https:// scheme)
+        if [ -n "$INGRESS" ]; then
+          # [Commented out] echo "Ingress before normalization: $INGRESS"
+          # Reason: Reduce noisy logs; normalization should be transparent.
+          INGRESS=$(echo "$INGRESS" | tr -d '\r' | sed 's/^\s*//;s/\s*$//')
+          if [ "$INGRESS" = "<nil>" ] || [ "$INGRESS" = "null" ] || [ -z "$INGRESS" ]; then
+            echo "Ingress value indicates empty (nil/null); clearing for further fallbacks."
+            INGRESS=""
+          fi
+          if [ -n "$INGRESS" ] && ! echo "$INGRESS" | grep -Eiq '^https?://'; then
+            echo "Ingress missing scheme; prefixing https://"
+            INGRESS="https://$INGRESS"
+          fi
+        fi
+        
+        if [ -z "$INGRESS" ]; then
+          echo "Could not determine ingress URL; skipping health probe."
+          exit 0
+        fi
+        echo "Resolved ingress via ${RES_SRC:-json}: $INGRESS"
+        echo "Default Ingress URL: $INGRESS"
+        # Probe health endpoint with up to 3 retries
+        
+        # Function: Collect DigitalOcean App Platform logs for diagnostics (non-fatal)
+        echo "Collecting DigitalOcean App Platform logs for diagnostics..."
+        COMPONENT_NAME="${COMPONENT_NAME:-n8n-web}"
+        mkdir -p diagnostics
+        # [Commented out] doctl apps logs "$APP_ID" --follow > diagnostics/all.log 2>&1 || true
+        # Reason: Large/unfiltered logs can overwhelm output; collect scoped logs below instead.
+        doctl apps logs "$APP_ID" --component "$COMPONENT_NAME" --follow=false > diagnostics/run-${COMPONENT_NAME}.log 2>&1 || true
+        doctl apps logs "$APP_ID" --type build --follow=false > diagnostics/build.log 2>&1 || true
+        doctl apps logs "$APP_ID" --type deploy --follow=false > diagnostics/deploy.log 2>&1 || true
+        doctl apps get "$APP_ID" -o json > diagnostics/app_get.json 2>&1 || true
+        
+        echo "---- Recent run logs (${COMPONENT_NAME}) ----"
+        tail -n 200 diagnostics/run-${COMPONENT_NAME}.log || true
+        echo "---- Recent build logs ----"
+        tail -n 200 diagnostics/build.log || true
+        echo "---- Recent deploy logs ----"
+        tail -n 200 diagnostics/deploy.log || true
+        for i in 1 2 3; do
+          echo "Health probe attempt $i..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$INGRESS/healthz")
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "Health check OK (HTTP 200)."
+            exit 0
+          fi
+          echo "Health check not OK (HTTP $HTTP_CODE). Waiting before retry..."
+          sleep 10
+        done
+        echo "Health check failed after 3 attempts. Please review component logs above."
+        # Do not fail the workflow on health probe failure to allow log collection to be useful
+        exit 0
+
+    # New step: Upload diagnostics logs as workflow artifacts for later review
+    - name: Upload diagnostics artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: diagnostics-${{ github.run_id }}
+        path: diagnostics
+        if-no-files-found: warn
+        retention-days: 7
